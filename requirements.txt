@@ -1,0 +1,6 @@
+Flask
+oracledb
+sqlfluff
+APScheduler
+paramiko
+PyYAML

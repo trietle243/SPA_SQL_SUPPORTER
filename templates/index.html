@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SPA SQL Supporter</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="app-header">
+        <div class="header-content">
+            <h1>SPA SQL Supporter</h1>
+            <div class="header-actions">
+                <button id="logoutBtn" class="btn-secondary">Logout</button>
+            </div>
+        </div>
+    </header>
+    
+    <div class="metadata-bar">
+        <div class="meta-box" id="meta-base">
+            <span class="meta-label">BASE</span>
+            <span class="meta-value" id="base-val">Loading...</span>
+        </div>
+        <div class="meta-box" id="meta-time">
+            <span class="meta-label">TIME</span>
+            <span class="meta-value" id="time-val">Loading...</span>
+        </div>
+    </div>
+
+    <main class="grid-container">
+        <!-- Left Panel -->
+        <div class="panel left-panel">
+            <div class="panel-header">
+                <h2>Source & Verification</h2>
+            </div>
+            <div class="panel-content">
+                <div class="form-group">
+                    <label>DB Objects Explorer</label>
+                    <select id="objectSelect">
+                        <option value="">Select an object...</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin-top: 10px;">
+                    <label>SQL File Upload</label>
+                    <div class="upload-zone" id="uploadZone">
+                        <input type="file" id="sqlFileInput" accept=".sql" style="display: none;">
+                        <button class="btn-primary" onclick="document.getElementById('sqlFileInput').click()">Choose .sql File</button>
+                        <span id="uploadFileName" class="sub-text">No file chosen</span>
+                    </div>
+                </div>
+                <div class="form-group expand-grow" style="margin-top: 10px;">
+                    <label>Raw SQL Viewer</label>
+                    <textarea id="rawSqlText" readonly placeholder="Upload a file to view raw SQL..."></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel -->
+        <div class="panel right-panel">
+            <div class="panel-header">
+                <h2>Validation Results & Fixed Output</h2>
+            </div>
+            <div class="panel-content">
+                <div class="validation-box">
+                    <ul id="validationList" class="val-list">
+                        <li class="val-item def-msg">Upload a file to see validation results</li>
+                    </ul>
+                </div>
+                <div class="form-group expand-grow" style="margin-top: 10px;">
+                    <label>Fixed SQL Preview</label>
+                    <textarea id="fixedSqlText" readonly placeholder="Validation output will appear here..."></textarea>
+                </div>
+                <div class="panel-actions">
+                    <button id="fixIssuesBtn" class="btn-primary" disabled>Fix Issues</button>
+                    <button id="confirmBtn" class="btn-success" disabled>Confirm & Deploy</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="app-footer">
+        <p><i>This item’s classification is Internal. It was created by and is in property of the Home Credit. Do not distribute outside of the organization.</i></p>
+    </footer>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
