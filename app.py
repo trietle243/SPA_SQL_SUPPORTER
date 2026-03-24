@@ -1,16 +1,19 @@
 import os
+from dotenv import load_dotenv
 import re
 from flask import Flask, render_template, request, session, jsonify, send_file
 import oracledb
+import requests
 import sqlfluff
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 app = Flask(__name__)
+load_dotenv()
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "super_secret_dev_key_spa")
-TRACKING_TABLE_NAME = os.environ.get("TRACKING_TABLE_NAME", "MIGRATION_TRACKING")
+TRACKING_TABLE_NAME = os.environ.get("TRACKING_TABLE_NAME", "AP_SALES.GIT_NAME_LOG")
 JDBC_URL = "jdbc:oracle:thin:@//dbhdwvn.vn.prod:1521/hdwvn.homecredit.vn"
 
-def get_db_connection():
+def get_db_connection(raise_on_error=False):
     # Parse JDBC URL to extract Host, Port, Service Name
     match = re.match(r'jdbc:oracle:thin:@//([^:]+):(\d+)/(.+)', JDBC_URL)
     if not match:
@@ -30,8 +33,10 @@ def get_db_connection():
         connection = oracledb.connect(user=username, password=password, dsn=dsn)
         return connection
     except Exception as e:
-        # Fallback to None if connection fails to allow UI inspection without DB
+        # Print for server-side logs and optionally raise for diagnostics
         print(f"Failed to connect to Oracle DB: {e}")
+        if raise_on_error:
+            raise
         return None
 
 @app.route('/')
@@ -46,12 +51,22 @@ def login():
     username = data.get('username')
     password = data.get('password')
     if username and password:
-        session['username'] = username
-        session['password'] = password
-        return jsonify({"success": True})
-    return jsonify({"success": False, "error": "Invalid credentials"}), 401
-    
-@app.route('/api/logout', methods=['POST'])
+        # Attempt a real DB connection to validate credentials before saving to session
+        match = re.match(r'jdbc:oracle:thin:@//([^:]+):(\d+)/(.+)', JDBC_URL)
+        if not match:
+            return jsonify({"success": False, "error": "Invalid JDBC URL configuration"}), 500
+        host, port, service_name = match.groups()
+        dsn = f"{host}:{port}/{service_name}"
+        try:
+            conn = oracledb.connect(user=username, password=password, dsn=dsn)
+            conn.close()
+            session['username'] = username
+            session['password'] = password
+            return jsonify({"success": True})
+        except Exception as e:
+            # Do not store credentials; return a clear error for the client
+            return jsonify({"success": False, "error": str(e)}), 401
+    return jsonify({"success": False, "error": "Missing username or password"}), 400
 def logout():
     session.clear()
     return jsonify({"success": True})
@@ -69,14 +84,16 @@ def test_connection():
     if 'username' not in session:
          return jsonify({"error": "Unauthorized"}), 401
     try:
-        conn = get_db_connection()
+        # Request connection and ask for diagnostic exception if it fails
+        conn = get_db_connection(raise_on_error=True)
         if conn:
             conn.close()
             return jsonify({"success": True, "message": "successfully connected"})
-        else:
-            return jsonify({"success": False, "error": "failed to connect"})
+        # Shouldn't reach here when raise_on_error=True, but keep fallback
+        return jsonify({"success": False, "error": "failed to connect"})
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        # Return the underlying error to help debug connectivity/auth issues
+        return jsonify({"success": False, "error": str(e)}), 200
 
 @app.route('/api/db/objects', methods=['GET'])
 def get_objects():
@@ -101,6 +118,65 @@ def get_objects():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+@app.route('/api/notify_working', methods=['POST'])
+def notify_working():
+    if 'username' not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    object_name = data.get('object')
+    if not object_name:
+        return jsonify({"error": "Missing object name"}), 400
+
+    webhook = os.environ.get('TEAMS_WEBHOOK_URL')
+    if not webhook:
+        return jsonify({"error": "Teams webhook not configured"}), 500
+
+    user = session.get('username')
+    # Use GMT+7 timezone and format as `YYYY-MM-DD HH:MM:SS AM/PM`
+    tz = timezone(timedelta(hours=7))
+    timestamp = datetime.now(tz).strftime("%Y-%m-%d %I:%M:%S %p")
+    message = f"{user} is working on {object_name} (via SPA) at {timestamp} (GMT+7)"
+
+    payload = {"text": message}
+    try:
+        resp = requests.post(webhook, json=payload, timeout=5)
+        resp.raise_for_status()
+    except Exception as e:
+        print(f"Failed to send Teams notification: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    return jsonify({"success": True})
+
+
+@app.route('/api/teams_test', methods=['POST'])
+def teams_test():
+    """Send a server-side test message to the configured Teams webhook.
+    Requires an authenticated session. Accepts optional JSON {"message": "..."}.
+    """
+    if 'username' not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    webhook = os.environ.get('TEAMS_WEBHOOK_URL')
+    if not webhook:
+        return jsonify({"error": "Teams webhook not configured"}), 500
+
+    data = request.get_json(force=True, silent=True) or {}
+    # Format test message timestamp in GMT+7
+    tz = timezone(timedelta(hours=7))
+    default_ts = datetime.now(tz).strftime("%Y-%m-%d %I:%M:%S %p")
+    message = data.get('message') or f"Test message from {session.get('username')} at {default_ts} (GMT+7)"
+
+    payload = {"text": message}
+    try:
+        resp = requests.post(webhook, json=payload, timeout=5)
+        resp.raise_for_status()
+    except Exception as e:
+        print(f"Failed to send Teams test message: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+    return jsonify({"success": True})
+
 @app.route('/api/db/version', methods=['GET'])
 def get_max_version():
     if 'username' not in session:
@@ -109,19 +185,19 @@ def get_max_version():
         conn = get_db_connection()
         if conn:
             cursor = conn.cursor()
+            # Query the configured tracking table for the latest version
             cursor.execute(f"SELECT MAX(VERSION) FROM {TRACKING_TABLE_NAME}")
             row = cursor.fetchone()
-            max_version = row[0] if row and row[0] else "V1.0"
+            max_version = row[0] if row and row[0] is not None else None
             cursor.close()
             conn.close()
         else:
             # Mocking for UI demonstration
-            max_version = "V2_4" 
+            max_version = "V2_4"
         return jsonify({"max_version": max_version})
     except Exception as e:
-        # Fallback for UI if table doesn't exist
         print(f"Failed to query max version: {e}")
-        return jsonify({"max_version": "V2_4"})
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/validate', methods=['POST'])
 def validate_sql():
