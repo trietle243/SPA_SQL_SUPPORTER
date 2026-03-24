@@ -1,6 +1,8 @@
 import os
 from dotenv import load_dotenv
 import re
+import json
+import urllib.request
 from flask import Flask, render_template, request, session, jsonify, send_file
 import oracledb
 import requests
@@ -94,6 +96,47 @@ def test_connection():
     except Exception as e:
         # Return the underlying error to help debug connectivity/auth issues
         return jsonify({"success": False, "error": str(e)}), 200
+
+@app.route('/api/notify_teams', methods=['POST'])
+def notify_teams():
+    if 'username' not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    data = request.json
+    object_name = data.get('object_name')
+    username = session.get('username')
+    
+    if not object_name:
+        return jsonify({"success": False, "error": "Missing object name"})
+        
+    TEAMS_WEBHOOK_URL = os.environ.get("TEAMS_WEBHOOK_URL", "https://homecreditgroup.webhook.office.com/webhookb2/03f82baf-6b65-496e-9b6b-24e1ffcc7d7d@5675d321-19d1-4c95-9684-2c28ac8f80a4/IncomingWebhook/77d46af4b6564d9691614649733c5453/84b834ec-ab13-466e-9a3b-6d57c3ac8bf5/V2La_GLFmZmwUP4QOV3_yfriOkF6Wyu-nqu9EpB3NLLgA1")
+    
+    if not TEAMS_WEBHOOK_URL:
+        print(f"[MS Teams Notification Mock] {username} is now working on {object_name}")
+        return jsonify({"success": True, "mocked": True, "message": "Notification logged to console."})
+        
+    message = {
+        "@type": "MessageCard",
+        "@context": "http://schema.org/extensions",
+        "themeColor": "0076D7",
+        "summary": f"{username} started work on an object",
+        "sections": [{
+            "activityTitle": f"**{username}** is now working on **{object_name}**",
+            "activitySubtitle": "SPA SQL Supporter Notification",
+            "markdown": True
+        }]
+    }
+    
+    try:
+        req = urllib.request.Request(TEAMS_WEBHOOK_URL, data=json.dumps(message).encode('utf-8'))
+        req.add_header('Content-Type', 'application/json')
+        with urllib.request.urlopen(req) as response:
+            if response.status == 200:
+                return jsonify({"success": True})
+            else:
+                return jsonify({"success": False, "error": f"MSTeams returned status {response.status}"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/db/objects', methods=['GET'])
 def get_objects():
