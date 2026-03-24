@@ -69,8 +69,11 @@ def login():
             # Do not store credentials; return a clear error for the client
             return jsonify({"success": False, "error": str(e)}), 401
     return jsonify({"success": False, "error": "Missing username or password"}), 400
+@app.route('/logout', methods=['GET', 'POST'])
 def logout():
     session.clear()
+    # Adding a print here helps you see it working in your VS Code terminal
+    print("User session cleared.") 
     return jsonify({"success": True})
 
 @app.route('/api/db/info', methods=['GET'])
@@ -97,45 +100,54 @@ def test_connection():
         # Return the underlying error to help debug connectivity/auth issues
         return jsonify({"success": False, "error": str(e)}), 200
 
-@app.route('/api/notify_teams', methods=['POST'])
+@app.route('/api/notify_working', methods=['POST'])
 def notify_teams():
+    # 1. Authorization Check
     if 'username' not in session:
         return jsonify({"error": "Unauthorized"}), 401
     
-    data = request.json
+    # 2. Get the session username
+    username = session.get('username', 'Unknown User')
+    
+    # 3. Get the JSON data from the JS fetch (the "what")
+    data = request.get_json(force=True, silent=True) or {}
     object_name = data.get('object_name')
-    username = session.get('username')
     
     if not object_name:
-        return jsonify({"success": False, "error": "Missing object name"})
-        
-    TEAMS_WEBHOOK_URL = os.environ.get("TEAMS_WEBHOOK_URL", "https://homecreditgroup.webhook.office.com/webhookb2/03f82baf-6b65-496e-9b6b-24e1ffcc7d7d@5675d321-19d1-4c95-9684-2c28ac8f80a4/IncomingWebhook/77d46af4b6564d9691614649733c5453/84b834ec-ab13-466e-9a3b-6d57c3ac8bf5/V2La_GLFmZmwUP4QOV3_yfriOkF6Wyu-nqu9EpB3NLLgA1")
-    
-    if not TEAMS_WEBHOOK_URL:
-        print(f"[MS Teams Notification Mock] {username} is now working on {object_name}")
-        return jsonify({"success": True, "mocked": True, "message": "Notification logged to console."})
-        
-    message = {
-        "@type": "MessageCard",
-        "@context": "http://schema.org/extensions",
-        "themeColor": "0076D7",
-        "summary": f"{username} started work on an object",
-        "sections": [{
-            "activityTitle": f"**{username}** is now working on **{object_name}**",
-            "activitySubtitle": "SPA SQL Supporter Notification",
-            "markdown": True
-        }]
+        return jsonify({"success": False, "error": "Missing object name"}), 400
+
+    # 4. Your Power Automate Group Chat Workflow URL
+    FLOW_URL = "https://default5675d32119d14c9596842c28ac8f80.a4.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/a9482fcd52574326a2d3e741856cdb7a/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=NqU55o3sRTOu7kqG78KRLU4creSZ4hk7pFvcng26YVA"
+
+    # 5. Payload for Power Automate (Matches your triggerOutputs() expressions)
+    payload = {
+        "username": username,
+        "object_name": object_name
     }
-    
+
     try:
-        req = urllib.request.Request(TEAMS_WEBHOOK_URL, data=json.dumps(message).encode('utf-8'))
+        # Prepare the request
+        req = urllib.request.Request(
+            FLOW_URL, 
+            data=json.dumps(payload).encode('utf-8')
+        )
         req.add_header('Content-Type', 'application/json')
+
+        # Send the request to Power Automate
         with urllib.request.urlopen(req) as response:
-            if response.status == 200:
+            status_code = response.getcode()
+            # Power Automate typically returns 202 (Accepted) for these triggers
+            if status_code in [200, 202]:
+                print(f"DEBUG: Power Automate notified for {object_name} by {username}")
                 return jsonify({"success": True})
             else:
-                return jsonify({"success": False, "error": f"MSTeams returned status {response.status}"})
+                return jsonify({
+                    "success": False, 
+                    "error": f"Flow returned status {status_code}"
+                })
+
     except Exception as e:
+        print(f"ERROR: Failed to trigger Flow: {str(e)}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/db/objects', methods=['GET'])
