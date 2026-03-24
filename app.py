@@ -64,6 +64,20 @@ def get_db_info():
     service_name = match.groups()[2] if match else "Unknown"
     return jsonify({"service_name": service_name})
 
+@app.route('/api/db/test', methods=['GET'])
+def test_connection():
+    if 'username' not in session:
+         return jsonify({"error": "Unauthorized"}), 401
+    try:
+        conn = get_db_connection()
+        if conn:
+            conn.close()
+            return jsonify({"success": True, "message": "successfully connected"})
+        else:
+            return jsonify({"success": False, "error": "failed to connect"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @app.route('/api/db/objects', methods=['GET'])
 def get_objects():
     if 'username' not in session:
@@ -72,7 +86,7 @@ def get_objects():
         conn = get_db_connection()
         if conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT OBJECT_NAME, OBJECT_TYPE FROM ALL_OBJECTS WHERE OBJECT_TYPE IN ('PROCEDURE', 'PACKAGE', 'VIEW') AND ROWNUM <= 100")
+            cursor.execute("SELECT OBJECT_NAME, OBJECT_TYPE FROM AP_SALES.ALL_AP_SALES_OBJECTS WHERE OBJECT_TYPE IN ('PROCEDURE', 'PACKAGE', 'PACKAGE BODY', 'VIEW') AND ROWNUM <= 100")
             objects = [{"name": row[0], "type": row[1]} for row in cursor]
             cursor.close()
             conn.close()

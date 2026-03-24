@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchMaxVersion();
     fetchObjects();
 
+    document.getElementById('testDbBtn').addEventListener('click', testDbConnection);
     document.getElementById('logoutBtn').addEventListener('click', logout);
     document.getElementById('sqlFileInput').addEventListener('change', handleFileUpload);
     document.getElementById('objectSelect').addEventListener('change', handleObjectSelection);
@@ -19,6 +20,20 @@ let isFormatValid = false;
 async function logout() {
     await fetch('/api/logout', { method: 'POST' });
     window.location.reload();
+}
+
+async function testDbConnection() {
+    try {
+        const res = await fetch('/api/db/test');
+        const data = await res.json();
+        if (data.success) {
+            alert(data.message);
+        } else {
+            alert('Failed to connect: ' + (data.error || 'Unknown error'));
+        }
+    } catch (e) {
+        alert('Network error while testing connection.');
+    }
 }
 
 async function fetchBaseInfo() {
