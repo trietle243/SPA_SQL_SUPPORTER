@@ -69,11 +69,9 @@ def login():
             # Do not store credentials; return a clear error for the client
             return jsonify({"success": False, "error": str(e)}), 401
     return jsonify({"success": False, "error": "Missing username or password"}), 400
-@app.route('/logout', methods=['GET', 'POST'])
+@app.route('/api/logout', methods=['POST'])
 def logout():
-    session.clear()
-    # Adding a print here helps you see it working in your VS Code terminal
-    print("User session cleared.") 
+    session.clear() # Xóa sạch username và password đã lưu
     return jsonify({"success": True})
 
 @app.route('/api/db/info', methods=['GET'])

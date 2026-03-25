@@ -19,8 +19,15 @@ let isFormatValid = false;
 
 // API Fetchers
 async function logout() {
-    await fetch('/api/logout', { method: 'POST' });
-    window.location.reload();
+    // Gọi đúng endpoint bạn sẽ định nghĩa ở Python (ví dụ: /api/logout)
+    const response = await fetch('/api/logout', { method: 'POST' });
+    
+    if (response.ok) {
+        // Chuyển hướng về trang chủ để Python check lại session
+        window.location.href = '/'; 
+    } else {
+        alert("Logout failed!");
+    }
 }
 
 async function testDbConnection() {
