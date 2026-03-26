@@ -7,8 +7,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('testDbBtn').addEventListener('click', testDbConnection);
     document.getElementById('logoutBtn').addEventListener('click', logout);
     document.getElementById('sqlFileInput').addEventListener('change', handleFileUpload);
+    document.getElementById('checkIssuesBtn').addEventListener('click', handleCheckIssues);
     document.getElementById('fixIssuesBtn').addEventListener('click', handleFixIssues);
-    document.getElementById('confirmBtn').addEventListener('click', handleConfirm);
+    document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+    initTheme();
 });
 
 let currentSqlContent = '';
@@ -58,19 +60,34 @@ async function fetchMaxVersion() {
     try {
         const res = await fetch('/api/db/version');
         const data = await res.json();
+        
         if (data.max_version) {
             maxVersionString = data.max_version;
-            // Show only the major (latest) version number in the LATEST VERSION box
             const m = /V?(\d+)/i.exec(maxVersionString);
-            const major = m ? m[1] : maxVersionString;
-            document.getElementById('time-val').textContent = major;
-            // Keep next-version box logic using full maxVersionString
-            updateNextVersionBox(maxVersionString);
+            const major = m ? parseInt(m[1], 10) : 0;
+            
+            // --- ANIMATED COUNTERS ---
+            animateValue("time-val", 0, major, 1000);
+            animateValue("next-val", 0, major + 1, 1000);
         }
     } catch (e) {
         document.getElementById('time-val').textContent = 'Error';
-        updateNextVersionBox(null);
     }
+}
+
+function animateValue(id, start, end, duration) {
+    const obj = document.getElementById(id);
+    if (!obj) return;
+    let startTimestamp = null;
+    const step = (timestamp) => {
+        if (!startTimestamp) startTimestamp = timestamp;
+        const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+        obj.innerHTML = Math.floor(progress * (end - start) + start);
+        if (progress < 1) {
+            window.requestAnimationFrame(step);
+        }
+    };
+    window.requestAnimationFrame(step);
 }
 
 // static/js/app.js
@@ -114,66 +131,18 @@ function handleObjectSelection(e) {
     const notifyBtn = document.getElementById('notifyTeamsBtn');
     if (e.target.value) {
         const objectName = e.target.value;
-        // --- FIX STARTS HERE ---
-        // Find the header, or fall back to the document body if header doesn't exist
-        const anchorEl = document.getElementById('header') || document.body;
-        showWorkingBanner(anchorEl, objectName);
-        // --- FIX ENDS HERE ---
-        send_alert(`Selected object: ${objectName}`);
+        const cleanName = objectName.replace(/^\[.*?\]\s*/, '').trim();
+
         if (notifyBtn) {
-            notifyBtn.textContent = `I'm working on ${objectName}`;
+            notifyBtn.textContent = `Notify team: I'm working on ${cleanName}`;
             notifyBtn.style.display = 'block';
         }
     } else {
         if (notifyBtn) notifyBtn.style.display = 'none';
     }
 }
-function send_alert(message) {
-    alert(`[SYSTEM ALERT]\n${message}`);
-}
 
-function showWorkingBanner(anchorEl, objectName) {
-    // remove old banner if exists
-    const old = document.getElementById('working-banner');
-    if (old) old.remove();
 
-    const banner = document.createElement('div');
-    banner.id = 'working-banner';
-    banner.style.marginTop = '8px';
-    banner.style.padding = '8px';
-    banner.style.border = '1px solid #ddd';
-    banner.style.background = '#f9f9f9';
-    banner.innerHTML = `
-        <span>I'm working on <strong>${objectName}</strong></span>
-        <button id="notify-working-btn" style="margin-left:12px">Notify team</button>
-        <span id="notify-result" style="margin-left:12px"></span>
-    `;
-
-    anchorEl.insertAdjacentElement('afterend', banner);
-
-    document.getElementById('notify-working-btn').addEventListener('click', function () {
-        const resultEl = document.getElementById('notify-result');
-        resultEl.textContent = ' Sending...';
-        fetch('/api/notify_working', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ object_name: objectName })
-        })
-            .then(r => r.json())
-            .then(j => {
-                if (j && j.success) {
-                    resultEl.textContent = ' Notified Teams';
-                } else {
-                    resultEl.textContent = ' Notification failed';
-                    console.error('Teams notify failed', j);
-                }
-            })
-            .catch(err => {
-                resultEl.textContent = ' Error sending';
-                console.error('Notify error', err);
-            });
-    });
-}
 
 function handleFileUpload(event) {
     const file = event.target.files[0];
@@ -186,9 +155,43 @@ function handleFileUpload(event) {
     reader.onload = (e) => {
         currentSqlContent = e.target.result;
         document.getElementById('rawSqlText').value = currentSqlContent;
+        
+        // Show in pretty box with Prism highlighting
+        const rawCodeEl = document.getElementById('rawSqlCode');
+        rawCodeEl.textContent = currentSqlContent;
+        Prism.highlightElement(rawCodeEl);
+        
+        // Clear old comparison box
+        document.getElementById('fixedSqlDisplay').innerHTML = '';
+        
+        // Update Stepper
+        updateStepper(1);
+        
         validateFile(currentFileName, currentSqlContent);
     };
     reader.readAsText(file);
+}
+
+function updateStepper(activeStep) {
+    const steps = ['step1', 'step2', 'step3', 'step4'];
+    steps.forEach((id, index) => {
+        const step = document.getElementById(id);
+        const connector = step.nextElementSibling;
+        
+        step.classList.remove('active', 'complete');
+        if (connector && connector.classList.contains('step-connector')) {
+            connector.classList.remove('complete');
+        }
+
+        if (index + 1 < activeStep) {
+            step.classList.add('complete');
+            if (connector && connector.classList.contains('step-connector')) {
+                connector.classList.add('complete');
+            }
+        } else if (index + 1 === activeStep) {
+            step.classList.add('active');
+        }
+    });
 }
 
 function validateFile(filename, content) {
@@ -242,17 +245,98 @@ function validateFile(filename, content) {
     addValidationItem(`Content Type Identified: ${contentTypeLabel}`, 'icon-green');
 
     // 3. Enable UI Buttons
-    document.getElementById('fixIssuesBtn').disabled = false;
+    document.getElementById('checkIssuesBtn').disabled = false;
+    document.getElementById('fixIssuesBtn').disabled = true;
     document.getElementById('confirmBtn').disabled = true;
 
     isFormatValid = allValid;
 }
 
-function addValidationItem(text, iconClass) {
+async function handleCheckIssues() {
+    const checkBtn = document.getElementById('checkIssuesBtn');
+    checkBtn.disabled = true;
+    checkBtn.textContent = 'Checking...';
+    
+    // Clear list
+    const valList = document.getElementById('validationList');
+    valList.innerHTML = '';
+    
+    try {
+        const res = await fetch('/api/validate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sql: currentSqlContent, checkOnly: true }) 
+        });
+        const data = await res.json();
+
+        if (data.lint_issues) {
+            if (data.lint_issues.length > 0) {
+                addValidationItem(`Lint checker found ${data.lint_issues.length} issues that need fixing.`, 'icon-red');
+                
+                // Highlight rows in Raw SQL Viewer
+                highlightRawSqlErrors(data.lint_issues);
+            } else {
+                addValidationItem(`Code seems clean already, but you can still run Fix to ensure latest versioning/renaming.`, 'icon-green');
+            }
+            document.getElementById('fixIssuesBtn').disabled = false;
+            // Update Stepper to Check
+            updateStepper(2);
+        }
+    } catch (e) {
+        alert('API Error while checking issues.');
+    } finally {
+        checkBtn.textContent = 'Check Issues';
+        checkBtn.disabled = false;
+    }
+}
+
+function highlightRawSqlErrors(issues) {
+    const rawCodeEl = document.getElementById('rawSqlCode');
+    
+    // We recreate the inner structure to allow per-line highlights
+    const lines = currentSqlContent.split('\n');
+    const errorLines = new Set(issues.filter(i => i.line).map(i => i.line));
+    
+    rawCodeEl.innerHTML = '';
+    lines.forEach((lineText, index) => {
+        const lineNum = index + 1;
+        const lineSpan = document.createElement('span');
+        lineSpan.style.display = 'block';
+        
+        if (errorLines.has(lineNum)) {
+            lineSpan.className = 'lint-error';
+        }
+        
+        // Highlight this specific line with Prism
+        lineSpan.innerHTML = Prism.highlight(lineText || ' ', Prism.languages.sql, 'sql');
+        rawCodeEl.appendChild(lineSpan);
+    });
+}
+
+function addValidationItem(text, iconClass, isFinal = false) {
     const valList = document.getElementById('validationList');
     const li = document.createElement('li');
     li.className = 'val-item';
-    li.innerHTML = `<span class="val-icon ${iconClass}"></span> ${text}`;
+    
+    if (isFinal) {
+        li.style.marginTop = '15px';
+        li.style.paddingTop = '15px';
+        li.style.borderTop = '1px solid #FEE2E2';
+        li.style.fontWeight = '800';
+        li.style.fontSize = '1.125rem';
+        li.style.display = 'flex';
+        li.style.alignItems = 'center';
+        li.style.gap = '1rem';
+        
+        li.innerHTML = `
+            <span class="val-icon ${iconClass}"></span>
+            <span>${text}</span>
+            <img src="/static/css/duypb.jpg" style="width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--success-green); box-shadow: var(--shadow-sm); transition: transform 0.3s ease;" onmouseover="this.style.transform='scale(1.5)'" onmouseout="this.style.transform='scale(1)'">
+        `;
+    } else {
+        li.innerHTML = `<span class="val-icon ${iconClass}"></span> ${text}`;
+    }
+    
     valList.appendChild(li);
 }
 
@@ -260,6 +344,11 @@ async function handleFixIssues() {
     const fixBtn = document.getElementById('fixIssuesBtn');
     fixBtn.disabled = true;
     fixBtn.textContent = 'Fixing...';
+    
+    // 1. Clear OLD validation results (fixes duplication)
+    const valList = document.getElementById('validationList');
+    valList.innerHTML = '';
+    
     const originalFileName = currentFileName;
 
     // 1. Auto-rename file to MAX(VERSION) + 1
@@ -276,13 +365,32 @@ async function handleFixIssues() {
 
         if (data.fixed_sql) {
             document.getElementById('fixedSqlText').value = data.fixed_sql;
-            currentFileName = newFileName;
-            currentSqlContent = data.fixed_sql;
-            document.getElementById('uploadFileName').textContent = currentFileName;
+            
+            // --- NEW: CALC DIFF & RENDER ---
+            const diffDisplay = document.getElementById('fixedSqlDisplay');
+            const diff = Diff.diffWords(currentSqlContent, data.fixed_sql);
+            
+            diffDisplay.innerHTML = ''; // clear
+            const pre = document.createElement('pre');
+            const code = document.createElement('code');
+            code.className = 'diff-content';
+            
+            diff.forEach((part) => {
+                const span = document.createElement('span');
+                if (part.added) span.className = 'diff-added';
+                if (part.removed) span.className = 'diff-removed';
+                span.appendChild(document.createTextNode(part.value));
+                code.appendChild(span);
+            });
+            
+            pre.appendChild(code);
+            diffDisplay.appendChild(pre);
+            // --------------------------------
 
+            currentSqlContent = data.fixed_sql;
+            
             // Re-validate UI
             addValidationItem(`Formatting validated with sqlfluff (Oracle dialect).`, 'icon-green');
-            addValidationItem(`File renamed to ${newFileName}`, 'icon-green');
 
 
             // Decide naming based on SQL type
@@ -331,6 +439,13 @@ async function handleFixIssues() {
                 addValidationItem(`Syntax/Lint checker found ${data.lint_issues.length} lingering formatting issues.`, 'icon-red');
             } else {
                 addValidationItem(`No syntax issues found according to sqlfluff!`, 'icon-green');
+                // All green? Add final status
+                addValidationItem(`Ready to deploy!`, 'icon-green', true);
+                
+                // Update Stepper to Fix (Step 3)
+                updateStepper(3);
+                
+                document.getElementById('confirmBtn').disabled = false;
             }
 
 
@@ -525,5 +640,32 @@ async function notifyTeams() {
     } finally {
         notifyBtn.textContent = originalText;
         notifyBtn.disabled = false;
+    }
+}
+
+function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme');
+    const target = current === 'dark' ? 'light' : 'dark';
+    
+    document.documentElement.setAttribute('data-theme', target);
+    localStorage.setItem('theme', target);
+    
+    updateThemeIcons(target);
+}
+
+function initTheme() {
+    const saved = localStorage.getItem('theme') || 'light';
+    updateThemeIcons(saved);
+}
+
+function updateThemeIcons(theme) {
+    const sun = document.getElementById('theme-icon-sun');
+    const moon = document.getElementById('theme-icon-moon');
+    if (theme === 'dark') {
+        sun.style.display = 'block';
+        moon.style.display = 'none';
+    } else {
+        sun.style.display = 'none';
+        moon.style.display = 'block';
     }
 }
