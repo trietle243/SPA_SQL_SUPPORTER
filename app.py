@@ -171,37 +171,6 @@ def get_objects():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
-@app.route('/api/notify_working', methods=['POST'])
-def notify_working():
-    if 'username' not in session:
-        return jsonify({"error": "Unauthorized"}), 401
-    data = request.get_json(force=True, silent=True) or {}
-    object_name = data.get('object')
-    if not object_name:
-        return jsonify({"error": "Missing object name"}), 400
-
-    webhook = os.environ.get('TEAMS_WEBHOOK_URL')
-    if not webhook:
-        return jsonify({"error": "Teams webhook not configured"}), 500
-
-    user = session.get('username')
-    # Use GMT+7 timezone and format as `YYYY-MM-DD HH:MM:SS AM/PM`
-    tz = timezone(timedelta(hours=7))
-    timestamp = datetime.now(tz).strftime("%Y-%m-%d %I:%M:%S %p")
-    message = f"{user} is working on {object_name} (via SPA) at {timestamp} (GMT+7)"
-
-    payload = {"text": message}
-    try:
-        resp = requests.post(webhook, json=payload, timeout=5)
-        resp.raise_for_status()
-    except Exception as e:
-        print(f"Failed to send Teams notification: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
-
-    return jsonify({"success": True})
-
-
 @app.route('/api/teams_test', methods=['POST'])
 def teams_test():
     """Send a server-side test message to the configured Teams webhook.

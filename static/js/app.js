@@ -7,7 +7,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('testDbBtn').addEventListener('click', testDbConnection);
     document.getElementById('logoutBtn').addEventListener('click', logout);
     document.getElementById('sqlFileInput').addEventListener('change', handleFileUpload);
-    document.getElementById('objectSelect').addEventListener('change', handleObjectSelection);
     document.getElementById('fixIssuesBtn').addEventListener('click', handleFixIssues);
     document.getElementById('confirmBtn').addEventListener('click', handleConfirm);
 });
@@ -158,7 +157,7 @@ function showWorkingBanner(anchorEl, objectName) {
         fetch('/api/notify_working', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ object: objectName })
+            body: JSON.stringify({ object_name: objectName })
         })
             .then(r => r.json())
             .then(j => {
@@ -265,11 +264,7 @@ async function handleFixIssues() {
 
     // 1. Auto-rename file to MAX(VERSION) + 1
     let nextVersionObj = calculateNextVersion(maxVersionString);
-    // Pick ONE of the below lines, or use the second one to overwrite the first:
-    let newFileName = `V${nextVersionObj.major}_${nextVersionObj.minor}_fixed_${currentFileName.replace(/[^a-zA-Z0-9]/g, '_')}.sql`;
-
-    // Remove 'let' from the line below:
-    newFileName = generateMigrationFilename(currentSqlContent, currentFileName, maxVersionString);
+    let newFileName = generateMigrationFilename(currentSqlContent, currentFileName, maxVersionString);
     // 2. Format SQL Text (Python backend)
     try {
         const res = await fetch('/api/validate', {
@@ -477,7 +472,6 @@ async function handleConfirm() {
         alert('Network error while deploying.');
     }
 }
-// Add this at the end of app.js
 // Add this at the end of app.js
 async function notifyTeams() {
     const objectSelect = document.getElementById('objectSelect');
