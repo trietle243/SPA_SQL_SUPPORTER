@@ -151,6 +151,25 @@
         <p><i>This item’s classification is Internal. It was created by and is in property of the Home Credit. Do not distribute outside of the organization.</i></p>
     </footer>
 
+    <!-- Subversion Modal -->
+    <div id="subversionModal" class="modal-overlay" style="display: none;">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>Select Subversion</h3>
+            </div>
+            <div class="modal-body">
+                <p>Please enter the subversion (minor number) for this migration:</p>
+                <div class="form-group">
+                    <input type="number" id="subversionInput" value="1" min="1" step="1" class="modal-input">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelSubBtn" class="btn-secondary">Cancel</button>
+                <button id="confirmSubBtn" class="btn-success">Apply & Rename</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/js/app.js"></script>
 </body>
 </html>

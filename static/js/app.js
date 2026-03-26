@@ -9,7 +9,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('sqlFileInput').addEventListener('change', handleFileUpload);
     document.getElementById('checkIssuesBtn').addEventListener('click', handleCheckIssues);
     document.getElementById('fixIssuesBtn').addEventListener('click', handleFixIssues);
-    document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+    document.getElementById('confirmBtn').addEventListener('click', handleConfirm);
+    document.getElementById('confirmSubBtn').addEventListener('click', onSubversionConfirm);
+    document.getElementById('cancelSubBtn').addEventListener('click', () => {
+        document.getElementById('subversionModal').style.display = 'none';
+        const fixBtn = document.getElementById('fixIssuesBtn');
+        fixBtn.textContent = 'Fix Issues';
+        fixBtn.disabled = false;
+    });
     initTheme();
 });
 
@@ -407,45 +414,20 @@ async function handleFixIssues() {
                 const displayName = currentFileName.replace(/\.sql$/i, '');
                 addValidationItem(`Repeatable file renamed to ${displayName}`, 'icon-green');
             } else {
-                // Ask user for subversion (minor) to build final filename
-                let subversion = window.prompt('Enter subversion number (minor) for this migration (e.g. 1):', '1');
-                if (subversion === null) {
-                    // user cancelled - restore state and abort
-                    addValidationItem('File rename cancelled by user.', 'icon-red');
-                    document.getElementById('fixedSqlText').value = '';
-                    currentFileName = originalFileName || currentFileName;
-                    fixBtn.textContent = 'Fix Issues';
-                    fixBtn.disabled = false;
-                    return;
-                }
-
-                // validate subversion
-                subversion = subversion.toString().trim();
-                if (!/^[0-9]+$/.test(subversion)) {
-                    addValidationItem('Invalid subversion provided; using 1.', 'icon-red');
-                    subversion = '1';
-                }
-
-                currentFileName = generateMigrationFilename(finalSql, currentFileName, maxVersionString, subversion);
-                currentSqlContent = finalSql;
-                document.getElementById('uploadFileName').textContent = currentFileName;
-
-                addValidationItem(`Formatting validated with sqlfluff (Oracle dialect).`, 'icon-green');
-                const displayName = currentFileName.replace(/\.sql$/i, '');
-                addValidationItem(`File renamed to ${displayName}`, 'icon-green');
+                // --- MODAL TRIGGER INSTEAD OF PROMPT ---
+                document.getElementById('subversionModal').style.display = 'flex';
+                document.getElementById('subversionInput').focus();
+                
+                // Store state for modal callback
+                window._pendingFixData = { finalSql, fixBtn };
+                return; // Wait for modal
             }
 
             if (data.lint_issues && data.lint_issues.length > 0) {
-                addValidationItem(`Syntax/Lint checker found ${data.lint_issues.length} lingering formatting issues.`, 'icon-red');
+                // Store issues for the modal callback
+                window._pendingFixLintIssues = data.lint_issues;
             } else {
-                addValidationItem(`No syntax issues found according to sqlfluff!`, 'icon-green');
-                // All green? Add final status
-                addValidationItem(`Ready to deploy!`, 'icon-green', true);
-                
-                // Update Stepper to Fix (Step 3)
-                updateStepper(3);
-                
-                document.getElementById('confirmBtn').disabled = false;
+                window._pendingFixLintIssues = [];
             }
 
 
@@ -552,16 +534,32 @@ function generateMigrationFilename(sqlContent, originalName, maxVersion, subvers
 }
 
 async function handleConfirm() {
-    // 1. Download file
-    const blob = new Blob([currentSqlContent], { type: 'text/plain' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = currentFileName;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
+    // Safety check for filename
+    if (!currentFileName || currentFileName === "No file chosen") {
+        currentFileName = "migration.sql";
+    }
+    if (!currentFileName.toLowerCase().endsWith('.sql')) {
+        currentFileName += '.sql';
+    }
+
+    // 1. Download file via stable blob method
+    try {
+        const blob = new Blob([currentSqlContent], { type: 'text/plain' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = currentFileName;
+        document.body.appendChild(a);
+        a.click();
+        
+        // Minor delay before cleanup to ensure trigger
+        setTimeout(() => {
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        }, 100);
+    } catch (e) {
+        console.error("Download failed", e);
+    }
 
     // 2. DB Insert Action
     try {
@@ -637,9 +635,39 @@ async function notifyTeams() {
     } catch (err) {
         console.error('Fetch Error:', err);
         alert(`🔌 Network Error: ${err.message}`);
-    } finally {
         notifyBtn.textContent = originalText;
         notifyBtn.disabled = false;
+    }
+}
+
+function onSubversionConfirm() {
+    const subInput = document.getElementById('subversionInput');
+    const subversion = subInput.value.trim() || '1';
+    const modal = document.getElementById('subversionModal');
+    
+    if (window._pendingFixData) {
+        const { finalSql, fixBtn } = window._pendingFixData;
+        
+        currentFileName = generateMigrationFilename(finalSql, currentFileName, maxVersionString, subversion);
+        currentSqlContent = finalSql;
+        document.getElementById('uploadFileName').textContent = currentFileName;
+
+        addValidationItem(`Formatting validated with sqlfluff (Oracle dialect).`, 'icon-green');
+        const displayName = currentFileName.replace(/\.sql$/i, '');
+        addValidationItem(`File renamed to ${displayName}`, 'icon-green');
+
+        if (window._pendingFixLintIssues && window._pendingFixLintIssues.length > 0) {
+             addValidationItem(`Syntax/Lint checker found ${window._pendingFixLintIssues.length} issues.`, 'icon-red');
+        } else {
+             addValidationItem(`No syntax issues found according to sqlfluff!`, 'icon-green');
+             addValidationItem(`Ready to deploy!`, 'icon-green', true);
+             updateStepper(3);
+             document.getElementById('confirmBtn').disabled = false;
+        }
+
+        fixBtn.textContent = 'Fix Issues';
+        fixBtn.disabled = false;
+        modal.style.display = 'none';
     }
 }
 
